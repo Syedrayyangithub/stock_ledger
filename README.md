@@ -404,6 +404,3 @@ No paid services are required for local development or evaluation.
 
 ---
 
-## Submission zip
-
-Include the whole project folder (`pom.xml`, `src/`, `README.md`, `DESIGN.md`, `compose.yaml`, `mvnw`, `mvnw.cmd`). Exclude `target/` if possible to keep the archive small.
