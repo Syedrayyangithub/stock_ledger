@@ -74,6 +74,8 @@ Or open in a browser:
 - http://localhost:8080/api/items  
 - http://localhost:8080/api/warehouses  
 
+For **POST**, **PATCH**, and movements, use **Invoke-RestMethod** — see [Calling the API on Windows](#calling-the-api-on-windows-powershell). You do not need to install curl.
+
 ### macOS / Linux
 
 ```bash
@@ -139,13 +141,13 @@ Creates (or returns existing):
 - Items: `PEN-BLUE`, `PAPER-A4`
 - Warehouses: `WH-NORTH`, `WH-SOUTH`
 
-PowerShell:
+PowerShell (recommended on Windows):
 
 ```powershell
 Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/demo/seed
 ```
 
-curl:
+curl (macOS / Linux, or optional `curl.exe` on Windows):
 
 ```bash
 curl -X POST http://localhost:8080/api/demo/seed
@@ -202,9 +204,105 @@ Replace `{id}`, `{itemId}`, `{whId}`, etc. with UUIDs from seed or list response
 
 ---
 
+## Calling the API on Windows (PowerShell)
+
+On Windows you do **not** need to install curl. PowerShell includes **`Invoke-RestMethod`**, which works for every endpoint below.
+
+**Important:** In PowerShell, `curl` is an alias for `Invoke-WebRequest`. It does **not** support `curl -X POST ...` and will fail. Either:
+
+- use **`Invoke-RestMethod`** (recommended on Windows), or  
+- call the real curl binary as **`curl.exe -X POST ...`** if it is on your PATH (optional; not required).
+
+**GET** (also works in the browser for read-only URLs):
+
+```powershell
+Invoke-RestMethod -Uri "http://localhost:8080/api/items"
+Invoke-RestMethod -Uri "http://localhost:8080/api/items/ITEM_ID"
+Invoke-RestMethod -Uri "http://localhost:8080/api/stock?itemId=ITEM_ID&warehouseId=WH_ID"
+```
+
+**POST / PATCH with a JSON body** — put the JSON in `$body` first:
+
+```powershell
+$body = '{"code":"PEN-BLUE","name":"Blue Pen","unit":"PIECES"}'
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/items `
+  -ContentType "application/json" -Body $body
+
+$body = '{"name":"Blue Gel Pen"}'
+Invoke-RestMethod -Method Patch -Uri http://localhost:8080/api/items/ITEM_ID `
+  -ContentType "application/json" -Body $body
+```
+
+**POST with no body** (seed, disable):
+
+```powershell
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/demo/seed
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/items/ITEM_ID/disable
+```
+
+**If a request fails**, read the JSON error message:
+
+```powershell
+try {
+    Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/movements `
+      -ContentType "application/json" -Body $body
+} catch {
+    $_.ErrorDetails.Message
+}
+```
+
+### PowerShell examples after seed
+
+Copy ids from `Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/demo/seed` or from `GET /api/items`.
+
+```powershell
+$itemId = "PASTE_PEN_BLUE_ID"
+$whNorth = "PASTE_WH_NORTH_ID"
+$whSouth = "PASTE_WH_SOUTH_ID"
+
+# IN 100 at North
+$body = @"
+{"kind":"IN","itemId":"$itemId","quantity":100,"warehouseId":"$whNorth","reason":"purchase order 4471","occurredAt":"2026-03-01T09:00:00Z","recordedBy":"alex"}
+"@
+$in = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/movements `
+  -ContentType "application/json" -Body $body
+
+# OUT 15 at North
+$body = @"
+{"kind":"OUT","itemId":"$itemId","quantity":15,"warehouseId":"$whNorth","reason":"customer order 12","occurredAt":"2026-03-02T12:00:00Z","recordedBy":"alex"}
+"@
+$out = Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/movements `
+  -ContentType "application/json" -Body $body
+
+# TRANSFER 20 North -> South
+$body = @"
+{"kind":"TRANSFER","itemId":"$itemId","quantity":20,"fromWarehouseId":"$whNorth","toWarehouseId":"$whSouth","reason":"restock south","occurredAt":"2026-03-04T08:00:00Z","recordedBy":"sam"}
+"@
+Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/movements `
+  -ContentType "application/json" -Body $body
+
+# Cancel the OUT (use $out.id from above)
+$body = '{"recordedBy":"alex","reason":"wrong quantity"}'
+Invoke-RestMethod -Method Post -Uri "http://localhost:8080/api/movements/$($out.id)/cancel" `
+  -ContentType "application/json" -Body $body
+
+# Current stock at North
+Invoke-RestMethod -Uri "http://localhost:8080/api/stock?itemId=$itemId&warehouseId=$whNorth"
+
+# Stock at North on 3 March
+Invoke-RestMethod -Uri "http://localhost:8080/api/stock/as-of?itemId=$itemId&warehouseId=$whNorth&at=2026-03-03T00:00:00Z"
+
+# Movement history
+Invoke-RestMethod -Uri "http://localhost:8080/api/items/$itemId/movements?page=0&size=20"
+```
+
+macOS and Linux examples below use **curl**.
+
+---
+
 ## Endpoints (one example each)
 
-Examples use curl. On Windows PowerShell, use `Invoke-RestMethod` or `curl.exe` (PowerShell’s `curl` alias does not support `-X`).
+Examples below use **curl** (macOS / Linux, or Windows via `curl.exe`). **Windows users:** prefer [Invoke-RestMethod](#calling-the-api-on-windows-powershell) above — no extra tools required.
 
 ### Demo
 
@@ -347,22 +445,6 @@ curl "http://localhost:8080/api/stock/as-of?itemId=ITEM_ID&warehouseId=WH_ID&at=
 ```
 
 Stock uses `occurred_at` on movements. A cancellation affects stock from when it was **recorded**, not the original event date.
-
----
-
-## PowerShell example (record IN after seed)
-
-```powershell
-$itemId = "PASTE_PEN_BLUE_ID"
-$whId   = "PASTE_WH_NORTH_ID"
-
-$body = @"
-{"kind":"IN","itemId":"$itemId","quantity":100,"warehouseId":"$whId","reason":"purchase order 4471","occurredAt":"2026-03-01T09:00:00Z","recordedBy":"alex"}
-"@
-
-Invoke-RestMethod -Method Post -Uri http://localhost:8080/api/movements `
-  -ContentType "application/json" -Body $body
-```
 
 ---
 
