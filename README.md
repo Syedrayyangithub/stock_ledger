@@ -45,7 +45,6 @@ If you unzipped into a parent folder, `cd` into the inner `stock-ledger` directo
 ```powershell
 cd path\to\stock-ledger
 
-# Only if java -version still shows 1.8 in this terminal:
 $env:JAVA_HOME = "C:\Program Files\Java\jdk-21"
 $env:Path = "$env:JAVA_HOME\bin;" + $env:Path
 
